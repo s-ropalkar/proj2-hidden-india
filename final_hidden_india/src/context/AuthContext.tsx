@@ -13,7 +13,6 @@ interface AuthContextValue {
   loading: boolean;
   login: (email: string, password: string) => Promise<ScreenId>;
   register: (name: string, email: string, password: string) => Promise<ScreenId>;
-  googleLogin: (credential: string) => Promise<ScreenId>;
   logout: () => void;
   refreshUser: () => Promise<void>;
   setUserLocal: (user: AuthUser) => void;
@@ -55,12 +54,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return 'artistic-echoes';
   };
 
-  const googleLogin = async (credential: string): Promise<ScreenId> => {
-    const { user: u } = await api.googleLogin(credential);
-    setUser(u);
-    return api.homeScreenForUser(u) as ScreenId;
-  };
-
   const logout = () => {
     api.logout();
     setUser(null);
@@ -73,7 +66,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         loading,
         login,
         register,
-        googleLogin,
         logout,
         refreshUser,
         setUserLocal: setUser,

@@ -1,8 +1,6 @@
 import re
 from datetime import datetime, timezone
 
-from bson import ObjectId
-
 from db import col
 
 # Map quiz crafts/regions to searchable tags
@@ -84,7 +82,7 @@ def _interest_keywords(user: dict) -> set[str]:
     return keywords
 
 
-def recommend_for_user(user_id: ObjectId, limit: int = 6) -> dict:
+def recommend_for_user(user_id: str, limit: int = 6) -> dict:
     user = col("users").find_one({"_id": user_id}) or {}
     keywords = _interest_keywords(user)
     preferred_states = [s.lower() for s in user.get("preferred_states", []) if s]

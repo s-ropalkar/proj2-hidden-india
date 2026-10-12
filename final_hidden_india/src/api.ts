@@ -232,29 +232,6 @@ export async function login(email: string, password: string) {
   return data;
 }
 
-export async function googleLogin(credential: string) {
-  const data = await request<{ token: string; user: AuthUser }>('/auth/google', {
-    method: 'POST',
-    body: JSON.stringify({ credential }),
-  });
-  setToken(data.token);
-  return data;
-}
-
-export async function forgotPassword(email: string) {
-  return request<{ message: string; resetToken?: string }>('/auth/forgot-password', {
-    method: 'POST',
-    body: JSON.stringify({ email }),
-  });
-}
-
-export async function resetPassword(token: string, password: string) {
-  return request<{ message: string }>('/auth/reset-password', {
-    method: 'POST',
-    body: JSON.stringify({ token, password }),
-  });
-}
-
 export async function getMe(): Promise<AuthUser> {
   const data = await request<{ user: AuthUser }>('/auth/me');
   return data.user;

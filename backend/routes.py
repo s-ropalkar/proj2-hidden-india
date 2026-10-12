@@ -4,14 +4,11 @@ import re
 import uuid
 from datetime import datetime, timezone
 
-from bson import ObjectId
 from flask import Blueprint, current_app, jsonify, request
-from pymongo.errors import DuplicateKeyError
 from werkzeug.utils import secure_filename
 
 from auth import (
     create_access_token,
-    create_reset_token,
     get_current_user,
     hash_password,
     login_required,
@@ -21,6 +18,7 @@ from auth import (
 )
 from config import Config
 from db import col
+from ids import as_id
 from region_crafts import (
     all_catalog_crafts,
     artisan_craft_allowed,
@@ -37,10 +35,32 @@ api = Blueprint("api", __name__, url_prefix="/api")
 
 
 def oid(value: str):
-    try:
-        return ObjectId(value)
-    except Exception:
+    return as_id(value)
+
+
+def as_datetime(value):
+    """Normalize MySQL-JSON timestamps (str) or datetime objects."""
+    if value is None:
         return None
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, str):
+        text = value.strip().replace("Z", "+00:00")
+        try:
+            return datetime.fromisoformat(text)
+        except ValueError:
+            return None
+    return None
+
+
+def dt_isoformat(value) -> str:
+    dt = as_datetime(value) or datetime.now(timezone.utc)
+    return dt.isoformat()
+
+
+def dt_strftime(value, fmt: str = "%b %d, %Y") -> str:
+    dt = as_datetime(value) or datetime.now(timezone.utc)
+    return dt.strftime(fmt)
 
 
 @api.get("/catalog/states")
@@ -75,8 +95,6 @@ def serialize_doc(doc: dict, id_key: str = "id") -> dict:
     for k, v in doc.items():
         if k == "_id":
             continue
-        if isinstance(v, ObjectId):
-            continue
         if isinstance(v, datetime):
             out[k] = v.isoformat()
         elif k == "location" and isinstance(v, dict):
@@ -110,7 +128,7 @@ def save_upload(file_storage, subfolder: str) -> str:
 
 
 def push_notification(user_id, ntype: str, title: str, message: str, meta: dict | None = None):
-    uid = user_id if isinstance(user_id, ObjectId) else oid(str(user_id))
+    uid = as_id(user_id)
     col("notifications").insert_one(
         {
             "user_id": uid,
@@ -154,11 +172,9 @@ def register():
     }
     try:
         result = col("users").insert_one(user)
-    except DuplicateKeyError:
-        return jsonify({"error": "Email already registered"}), 409
     except Exception as exc:
         current_app.logger.exception("User registration failed")
-        msg = "Registration failed. Check that MongoDB is running."
+        msg = "Registration failed. Check that MySQL is running."
         if os.getenv("FLASK_DEBUG", "0") in ("1", "true", "True"):
             msg = f"{msg} ({type(exc).__name__})"
         return jsonify({"error": msg}), 500
@@ -179,41 +195,6 @@ def login():
         return jsonify({"error": "Account blocked"}), 403
     token = create_access_token(str(user["_id"]), user.get("role", "user"))
     return jsonify({"token": token, "user": serialize_user(user)})
-
-
-@api.post("/auth/forgot-password")
-def forgot_password():
-    data = request.get_json(silent=True) or {}
-    email = (data.get("email") or "").strip().lower()
-    user = col("users").find_one({"email": email})
-    if user:
-        token = create_reset_token(str(user["_id"]))
-        payload = {"message": "Reset link sent"}
-        if os.getenv("FLASK_DEBUG", "0") in ("1", "true", "True"):
-            payload["resetToken"] = token
-        return jsonify(payload)
-    return jsonify({"message": "If the email exists, a reset link was sent"})
-
-
-@api.post("/auth/reset-password")
-def reset_password():
-    data = request.get_json(silent=True) or {}
-    token = data.get("token") or ""
-    password = data.get("password") or ""
-    if len(password) < 6:
-        return jsonify({"error": "Password must be at least 6 characters"}), 400
-    reset = col("password_resets").find_one({"token": token})
-    if not reset:
-        return jsonify({"error": "Invalid or expired reset token"}), 400
-    col("users").update_one(
-        {"_id": reset["user_id"]},
-        {"$set": {"password": hash_password(password)}},
-    )
-    col("password_resets").delete_one({"_id": reset["_id"]})
-    return jsonify({"message": "Password updated successfully"})
-
-
-
 
 
 @api.get("/auth/me")
@@ -387,7 +368,7 @@ def my_orders(user):
                 "quantity": o["quantity"],
                 "total": o["total"],
                 "product": serialize_doc(product) if product else None,
-                "createdAt": o["created_at"].isoformat(),
+                "createdAt": dt_isoformat(o["created_at"]),
             }
         )
     return jsonify(out)
@@ -447,7 +428,7 @@ def my_notifications(user):
                     "title": n.get("title"),
                     "message": n.get("message"),
                     "read": n.get("read", False),
-                    "createdAt": n.get("created_at", datetime.now(timezone.utc)).isoformat(),
+                    "createdAt": dt_isoformat(n.get("created_at")),
                     "meta": n.get("meta") or {},
                 }
                 for n in notes
@@ -773,17 +754,23 @@ def artisan_apply(user):
         import json
 
         try:
-            crafts = json.loads(crafts_raw)
+            parsed = json.loads(crafts_raw)
+            if isinstance(parsed, list):
+                crafts = [str(c).strip() for c in parsed if str(c).strip()]
         except json.JSONDecodeError:
             crafts = []
     elif crafts_raw:
         crafts = [c.strip() for c in crafts_raw.split(",") if c.strip()]
-    for c in request.form.getlist("crafts"):
-        if c.strip():
-            crafts.append(c.strip())
+    else:
+        for c in request.form.getlist("crafts"):
+            if c.strip() and not c.strip().startswith("["):
+                crafts.append(c.strip())
     craft_single = (request.form.get("craftCategory") or request.form.get("category") or "").strip()
-    if craft_single and craft_single not in crafts:
+    if craft_single and "," not in craft_single and craft_single not in crafts:
         crafts.insert(0, craft_single)
+    # Deduplicate while preserving order
+    seen: set[str] = set()
+    crafts = [c for c in crafts if not (c in seen or seen.add(c))]
 
     if not state:
         return jsonify({"error": "state required"}), 400
@@ -856,8 +843,8 @@ def application_status(user):
             "region": app_doc.get("region"),
             "regionValidation": app_doc.get("region_validation"),
             "curatorNotes": app_doc.get("curator_notes", ""),
-            "date": app_doc.get("created_at", datetime.now(timezone.utc)).strftime("%b %d, %Y"),
-            "reviewedAt": app_doc.get("reviewed_at", datetime.now(timezone.utc)).strftime("%b %d, %Y")
+            "date": dt_strftime(app_doc.get("created_at")),
+            "reviewedAt": dt_strftime(app_doc.get("reviewed_at"))
             if app_doc.get("reviewed_at")
             else "",
         }
@@ -1202,13 +1189,13 @@ def admin_analytics(user):
 
     month_counts: dict[str, int] = {m: 0 for m in month_labels}
     for reg in col("workshop_registrations").find({}, {"created_at": 1}):
-        created = reg.get("created_at")
+        created = as_datetime(reg.get("created_at"))
         if created:
             month_counts[month_labels[created.month - 1]] += 1
 
     if col("workshop_registrations").count_documents({}) == 0:
         for ws in col("workshops").find({}, {"registration_count": 1, "created_at": 1}):
-            created = ws.get("created_at") or now
+            created = as_datetime(ws.get("created_at")) or now
             month_counts[month_labels[created.month - 1]] += ws.get("registration_count", 0)
 
     monthly_trends = []
@@ -1332,7 +1319,7 @@ def _serialize_application(a: dict) -> dict:
         "region": a.get("region", ""),
         "description": a.get("description", ""),
         "craftIcon": a.get("craft_icon", "brush"),
-        "date": a.get("created_at", datetime.now(timezone.utc)).strftime("%b %d, %Y"),
+        "date": dt_strftime(a.get("created_at")),
         "status": a["status"],
         "govtIdUrl": a.get("govt_id_url", ""),
         "certUrl": a.get("cert_url", ""),
@@ -1445,7 +1432,7 @@ def admin_users(user):
                 "email": u["email"],
                 "interests": ", ".join(u.get("interests", [])),
                 "status": "Blocked" if u.get("status") == "blocked" else "Active",
-                "joined": u.get("created_at", datetime.now(timezone.utc)).strftime("%b %d, %Y"),
+                "joined": dt_strftime(u.get("created_at")),
                 "role": u.get("role", "user"),
             }
             for u in users

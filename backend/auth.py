@@ -1,11 +1,9 @@
-import secrets
 from datetime import datetime, timezone
 from functools import wraps
 from typing import Callable
 
 import bcrypt
 import jwt
-from bson import ObjectId
 from flask import jsonify, request
 
 from config import Config
@@ -31,18 +29,6 @@ def create_access_token(user_id: str, role: str) -> str:
     return jwt.encode(payload, Config.JWT_SECRET, algorithm="HS256")
 
 
-def create_reset_token(user_id: str) -> str:
-    token = secrets.token_urlsafe(32)
-    col("password_resets").insert_one(
-        {
-            "user_id": ObjectId(user_id),
-            "token": token,
-            "expires_at": datetime.now(timezone.utc) + Config.JWT_RESET_EXPIRES,
-        }
-    )
-    return token
-
-
 def decode_token(token: str) -> dict | None:
     try:
         return jwt.decode(token, Config.JWT_SECRET, algorithms=["HS256"])
@@ -64,7 +50,7 @@ def get_current_user():
     payload = decode_token(token)
     if not payload or payload.get("type") != "access":
         return None
-    user = col("users").find_one({"_id": ObjectId(payload["sub"])})
+    user = col("users").find_one({"_id": str(payload["sub"])})
     if not user or user.get("status") == "blocked":
         return None
     return user

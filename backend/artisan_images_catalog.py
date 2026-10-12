@@ -1,4 +1,4 @@
-"""Map portrait images from google-images/artisans into public URLs for MongoDB seeding.
+"""Map portrait images from google-images/artisans into public URLs for catalog seeding.
 
 Only artisans with a real image file in this folder are included in the catalog.
 """

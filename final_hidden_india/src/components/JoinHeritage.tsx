@@ -4,14 +4,12 @@
  */
 
 import React, { useState } from 'react';
-import { GoogleLogin } from '@react-oauth/google';
 import {
   User, Mail, Lock, Eye, EyeOff, ArrowRight, CheckCircle,
   MapPin, Landmark, Shield, Heart,
 } from 'lucide-react';
 import { ScreenId } from '../types';
 import { useAuth } from '../context/AuthContext';
-import * as api from '../api';
 import { ApiError } from '../api';
 import BrandLogo from './BrandLogo';
 import { AUTH_HERO_SRC } from '../lib/utils';
@@ -20,60 +18,32 @@ interface JoinHeritageProps {
   onNextScreen: (next: ScreenId) => void;
 }
 
-type AuthMode = 'register' | 'login' | 'forgot' | 'reset';
+type AuthMode = 'login' | 'register';
 
 export default function JoinHeritage({ onNextScreen }: JoinHeritageProps) {
-  const { login, register, googleLogin } = useAuth();
-  const [mode, setMode] = useState<AuthMode>('register');
+  const { login, register } = useAuth();
+  const [mode, setMode] = useState<AuthMode>('login');
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [resetToken, setResetToken] = useState('');
-  const [resetMessage, setResetMessage] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [error, setError] = useState('');
 
-  const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined;
   const isRegister = mode === 'register';
-  const isAuthForm = mode === 'register' || mode === 'login';
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
     setError('');
-    setResetMessage('');
 
     try {
-      if (mode === 'forgot') {
-        if (!email) return;
-        const res = await api.forgotPassword(email);
-        setResetMessage(res.message);
-        if (res.resetToken) {
-          setResetToken(res.resetToken);
-          setMode('reset');
-        }
-        setIsSubmitting(false);
-        return;
-      }
+      if (!email || !password || (isRegister && !fullName)) return;
 
-      if (mode === 'reset') {
-        if (!resetToken || password.length < 6) return;
-        await api.resetPassword(resetToken, password);
-        setResetMessage('Password updated. You can sign in now.');
-        setMode('login');
-        setPassword('');
-        setIsSubmitting(false);
-        return;
-      }
-
-      if (!email || !password || (mode === 'register' && !fullName)) return;
-
-      const nextScreen =
-        mode === 'register'
-          ? await register(fullName, email, password)
-          : await login(email, password);
+      const nextScreen = isRegister
+        ? await register(fullName, email, password)
+        : await login(email, password);
 
       setShowSuccess(true);
       setIsSubmitting(false);
@@ -84,30 +54,13 @@ export default function JoinHeritage({ onNextScreen }: JoinHeritageProps) {
     }
   };
 
-  const handleGoogleSuccess = async (credentialResponse: { credential?: string }) => {
-    if (!credentialResponse.credential) return;
-    setError('');
-    setIsSubmitting(true);
-    try {
-      const nextScreen = await googleLogin(credentialResponse.credential);
-      setShowSuccess(true);
-      setIsSubmitting(false);
-      onNextScreen(nextScreen);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Google sign-in failed');
-      setIsSubmitting(false);
-    }
-  };
-
   const switchMode = (next: AuthMode) => {
     setMode(next);
     setError('');
-    setResetMessage('');
   };
 
   return (
     <div className="relative min-h-screen flex flex-col overflow-hidden">
-      {/* Background */}
       <div
         className="absolute inset-0 bg-cover bg-center bg-no-repeat"
         style={{ backgroundImage: `url(${AUTH_HERO_SRC})` }}
@@ -115,57 +68,35 @@ export default function JoinHeritage({ onNextScreen }: JoinHeritageProps) {
       <div className="absolute inset-0 bg-[#f5ebe0]/85 backdrop-blur-[2px]" />
 
       <div className="relative z-10 flex flex-col min-h-screen px-4 py-8 max-w-lg mx-auto w-full">
-        {/* Logo + tagline */}
         <header className="mb-6 flex justify-center pt-2">
           <BrandLogo size="hero" showTagline />
         </header>
 
-        {/* Card */}
         <section className="flex-grow flex flex-col">
           <div className="bg-white/95 rounded-2xl shadow-xl border border-[#e8d5c4]/60 px-6 py-8 md:px-8">
-            {isAuthForm && (
-              <div className="flex justify-center mb-4">
-                <div className="w-12 h-12 rounded-full border-2 border-[#c4a484] flex items-center justify-center text-[#8c4a2f]">
-                  {isRegister ? <User size={22} strokeWidth={1.5} /> : <Lock size={22} strokeWidth={1.5} />}
-                </div>
+            <div className="flex justify-center mb-4">
+              <div className="w-12 h-12 rounded-full border-2 border-[#c4a484] flex items-center justify-center text-[#8c4a2f]">
+                {isRegister ? <User size={22} strokeWidth={1.5} /> : <Lock size={22} strokeWidth={1.5} />}
               </div>
-            )}
+            </div>
 
-            {isAuthForm ? (
-              <>
-                <h1 className="font-serif text-2xl md:text-3xl text-center text-[#3d2914] font-semibold mb-1">
-                  {isRegister ? 'Create Account' : 'Welcome Back'}
-                </h1>
-                <p className="text-center text-sm text-[#7a6355] font-sans mb-6">
-                  {isRegister
-                    ? 'Start your journey to explore Hidden India'
-                    : 'Sign in to continue your adventure'}
-                </p>
-              </>
-            ) : (
-              <div className="mb-6 text-center">
-                <h1 className="font-serif text-2xl text-[#3d2914] font-semibold">
-                  {mode === 'forgot' ? 'Forgot Password' : 'Reset Password'}
-                </h1>
-                <button type="button" onClick={() => switchMode('login')} className="text-xs text-[#a0522d] font-bold mt-2">
-                  Back to sign in
-                </button>
-              </div>
-            )}
+            <h1 className="font-serif text-2xl md:text-3xl text-center text-[#3d2914] font-semibold mb-1">
+              {isRegister ? 'Create Account' : 'Welcome Back'}
+            </h1>
+            <p className="text-center text-sm text-[#7a6355] font-sans mb-6">
+              {isRegister
+                ? 'Sign up as an explorer — apply later to become an artisan'
+                : 'Sign in with your email and password'}
+            </p>
 
             {error && (
               <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-xs font-sans">
                 {error}
               </div>
             )}
-            {resetMessage && (
-              <div className="mb-4 p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-emerald-800 text-xs font-sans">
-                {resetMessage}
-              </div>
-            )}
 
             <form onSubmit={handleSubmit} className="space-y-4">
-              {mode === 'register' && (
+              {isRegister && (
                 <div>
                   <label className="block font-sans text-sm font-medium text-[#5c4a3d] mb-1.5">Full Name</label>
                   <div className="relative">
@@ -182,159 +113,94 @@ export default function JoinHeritage({ onNextScreen }: JoinHeritageProps) {
                 </div>
               )}
 
-              {mode !== 'reset' && (
-                <div>
-                  <label className="block font-sans text-sm font-medium text-[#5c4a3d] mb-1.5">Email Address</label>
-                  <div className="relative">
-                    <input
-                      type="email"
-                      placeholder="you@email.com"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      className="w-full rounded-lg border border-[#ddd0c0] bg-[#faf7f2] px-4 py-3 pr-10 text-[#3d2914] text-sm outline-none focus:border-[#a0522d] focus:ring-1 focus:ring-[#a0522d]/30"
-                      required
-                    />
-                    <Mail size={18} className="absolute right-3 top-3.5 text-[#b8a090]" />
-                  </div>
-                </div>
-              )}
-
-              {(mode === 'register' || mode === 'login' || mode === 'reset') && (
-                <div>
-                  <label className="block font-sans text-sm font-medium text-[#5c4a3d] mb-1.5">
-                    {mode === 'reset' ? 'New Password' : 'Password'}
-                  </label>
-                  <div className="relative">
-                    <input
-                      type={showPassword ? 'text' : 'password'}
-                      placeholder="••••••••"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      className="w-full rounded-lg border border-[#ddd0c0] bg-[#faf7f2] px-4 py-3 pr-12 text-[#3d2914] text-sm outline-none focus:border-[#a0522d] focus:ring-1 focus:ring-[#a0522d]/30"
-                      required
-                      minLength={6}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3 top-3 text-[#b8a090] hover:text-[#a0522d]"
-                    >
-                      {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                    </button>
-                  </div>
-                  {mode === 'register' && (
-                    <p className="mt-1.5 text-xs text-[#8a7568] flex items-center gap-1">
-                      <CheckCircle size={12} className="text-emerald-600" />
-                      Use at least 6 characters
-                    </p>
-                  )}
-                </div>
-              )}
-
-              {mode === 'reset' && (
-                <div>
-                  <label className="block font-sans text-sm font-medium text-[#5c4a3d] mb-1.5">Reset Token</label>
+              <div>
+                <label className="block font-sans text-sm font-medium text-[#5c4a3d] mb-1.5">Email Address</label>
+                <div className="relative">
                   <input
-                    type="text"
-                    placeholder="Paste token from email"
-                    value={resetToken}
-                    onChange={(e) => setResetToken(e.target.value)}
-                    className="w-full rounded-lg border border-[#ddd0c0] bg-[#faf7f2] px-4 py-3 text-sm outline-none focus:border-[#a0522d]"
+                    type="email"
+                    placeholder="you@email.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="w-full rounded-lg border border-[#ddd0c0] bg-[#faf7f2] px-4 py-3 pr-10 text-[#3d2914] text-sm outline-none focus:border-[#a0522d] focus:ring-1 focus:ring-[#a0522d]/30"
                     required
                   />
+                  <Mail size={18} className="absolute right-3 top-3.5 text-[#b8a090]" />
                 </div>
-              )}
+              </div>
 
-              {mode === 'login' && (
-                <div className="flex justify-end">
-                  <button type="button" onClick={() => switchMode('forgot')} className="text-xs text-[#a0522d] font-semibold">
-                    Forgot password?
+              <div>
+                <label className="block font-sans text-sm font-medium text-[#5c4a3d] mb-1.5">Password</label>
+                <div className="relative">
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    placeholder="••••••••"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="w-full rounded-lg border border-[#ddd0c0] bg-[#faf7f2] px-4 py-3 pr-12 text-[#3d2914] text-sm outline-none focus:border-[#a0522d] focus:ring-1 focus:ring-[#a0522d]/30"
+                    required
+                    minLength={6}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-3 text-[#b8a090] hover:text-[#a0522d]"
+                  >
+                    {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                   </button>
                 </div>
-              )}
+                {isRegister && (
+                  <p className="mt-1.5 text-xs text-[#8a7568] flex items-center gap-1">
+                    <CheckCircle size={12} className="text-emerald-600" />
+                    Use at least 6 characters
+                  </p>
+                )}
+              </div>
 
               <button
                 type="submit"
                 disabled={isSubmitting}
                 className="w-full mt-2 bg-[#a0522d] hover:bg-[#8c4425] text-white font-sans font-semibold text-sm tracking-wider uppercase py-3.5 rounded-lg shadow-md active:scale-[0.99] transition-all flex items-center justify-center gap-2 disabled:opacity-70"
               >
-                {isSubmitting
-                  ? 'Please wait...'
-                  : isRegister
-                    ? 'Create Account'
-                    : mode === 'login'
-                      ? 'Sign In'
-                      : mode === 'forgot'
-                        ? 'Send Reset Link'
-                        : 'Update Password'}
+                {isSubmitting ? 'Please wait...' : isRegister ? 'Create Account' : 'Sign In'}
                 <ArrowRight size={16} />
               </button>
             </form>
 
-            {isAuthForm && (
-              <>
-                <p className="text-center text-sm text-[#7a6355] mt-5">
-                  {isRegister ? (
-                    <>
-                      Already have an account?{' '}
-                      <button type="button" onClick={() => switchMode('login')} className="text-[#a0522d] font-bold">
-                        Sign in
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      Don&apos;t have an account?{' '}
-                      <button type="button" onClick={() => switchMode('register')} className="text-[#a0522d] font-bold">
-                        Sign up
-                      </button>
-                    </>
-                  )}
-                </p>
-
-                {googleClientId && (
-                  <>
-                    <div className="flex items-center gap-3 my-6">
-                      <div className="flex-grow h-px bg-[#e0d0c0]" />
-                      <span className="text-[10px] uppercase tracking-widest text-[#9a8578] font-bold whitespace-nowrap">
-                        Or continue with
-                      </span>
-                      <div className="flex-grow h-px bg-[#e0d0c0]" />
-                    </div>
-                    <div className="flex justify-center">
-                      <GoogleLogin
-                        onSuccess={handleGoogleSuccess}
-                        onError={() => setError('Google sign-in was cancelled or failed')}
-                        theme="outline"
-                        size="large"
-                        width="320"
-                      />
-                    </div>
-                  </>
-                )}
-              </>
-            )}
+            <p className="text-center text-sm text-[#7a6355] mt-5">
+              {isRegister ? (
+                <>
+                  Already have an account?{' '}
+                  <button type="button" onClick={() => switchMode('login')} className="text-[#a0522d] font-bold">
+                    Sign in
+                  </button>
+                </>
+              ) : (
+                <>
+                  Don&apos;t have an account?{' '}
+                  <button type="button" onClick={() => switchMode('register')} className="text-[#a0522d] font-bold">
+                    Sign up
+                  </button>
+                </>
+              )}
+            </p>
           </div>
         </section>
 
-        {/* Footer features */}
-        {isAuthForm && (
-          <footer className="mt-8 grid grid-cols-2 gap-6 px-2 pb-6">
-            {isRegister ? (
-              <>
-                <Feature icon={<MapPin size={20} />} title="Discover Hidden Gems" text="Offbeat places and unique experiences." />
-                <Feature icon={<Landmark size={20} />} title="Cultural Heritage" text="Explore India's rich history and traditions." />
-              </>
-            ) : (
-              <>
-                <Feature icon={<Shield size={20} />} title="Travel Safe & Smart" text="Curated tips for a safe and smooth journey." />
-                <Feature icon={<Heart size={20} />} title="Support Local" text="Empower local communities and preserve heritage." />
-              </>
-            )}
-          </footer>
-        )}
+        <footer className="mt-8 grid grid-cols-2 gap-6 px-2 pb-6">
+          {isRegister ? (
+            <>
+              <Feature icon={<MapPin size={20} />} title="Discover Hidden Gems" text="Offbeat places and unique experiences." />
+              <Feature icon={<Landmark size={20} />} title="Cultural Heritage" text="Explore India's rich history and traditions." />
+            </>
+          ) : (
+            <>
+              <Feature icon={<Shield size={20} />} title="Travel Safe & Smart" text="Curated tips for a safe and smooth journey." />
+              <Feature icon={<Heart size={20} />} title="Support Local" text="Empower local communities and preserve heritage." />
+            </>
+          )}
+        </footer>
       </div>
 
-      {/* Success overlay */}
       <div
         className={`fixed inset-0 z-50 bg-[#f5ebe0]/95 backdrop-blur-sm flex items-center justify-center px-4 transition-all duration-500 ${
           showSuccess ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
@@ -344,7 +210,7 @@ export default function JoinHeritage({ onNextScreen }: JoinHeritageProps) {
           <div className="w-20 h-20 bg-[#a0522d]/15 rounded-full flex items-center justify-center mx-auto">
             <CheckCircle className="text-[#a0522d]" size={40} />
           </div>
-          <h2 className="font-serif text-2xl text-[#3d2914]">Welcome, Explorer</h2>
+          <h2 className="font-serif text-2xl text-[#3d2914]">Welcome</h2>
           <p className="font-sans text-[#7a6355] text-sm max-w-xs mx-auto">
             Your heritage journey begins.
           </p>

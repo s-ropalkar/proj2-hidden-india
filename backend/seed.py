@@ -1,10 +1,8 @@
-"""Seed MongoDB with catalog built from google-images folders + demo accounts."""
+"""Seed the MySQL-backed catalog with data from google-images folders + demo accounts."""
 
 import re
 import sys
 from datetime import datetime, timezone
-
-from bson import ObjectId
 
 from config import Config
 from db import col, init_db
@@ -112,7 +110,7 @@ def seed_india_catalog(now):
             }
         )
 
-        artisan_ids: list[ObjectId] = []
+        artisan_ids: list[str] = []
         for portrait in state_portraits:
             artisan_ids.append(
                 col("artisans").insert_one(
@@ -251,7 +249,7 @@ def seed_demo_activity(now):
 
 
 def seed(force=False):
-    init_db(Config.MONGO_URI)
+    init_db(Config.MYSQL_URI)
     now = datetime.now(timezone.utc)
     region_count = col("regions").count_documents({})
     expected_states = len(scan_all())

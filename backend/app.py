@@ -14,7 +14,7 @@ def create_app() -> Flask:
     app.config["UPLOAD_FOLDER"] = os.path.abspath(Config.UPLOAD_FOLDER)
 
     CORS(app, origins=Config.CORS_ORIGINS, supports_credentials=True)
-    init_db(Config.MONGO_URI)
+    init_db(Config.MYSQL_URI)
 
     os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
     app.register_blueprint(api)
